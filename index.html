@@ -470,7 +470,7 @@ body { margin: 0; }
     if (!days.length) { box.innerHTML = `<div class="empty" style="border:0">Sem dias completos ainda.</div>`; return; }
     const ds = days.slice(-30);
     const W = Math.max(320, box.clientWidth - 32), H = 220, L = 64, R = 8, T = 12, B = 28;
-    const maxAbs = Math.max(1, ...ds.map((d) => Math.abs(d.pnl)));
+    const maxAbs = Math.max(10, ...ds.map((d) => Math.abs(d.pnl)));
     const nice = niceStep(maxAbs);
     const top = Math.ceil(maxAbs / nice) * nice;
     const y = (v) => T + ((top - v) / (2 * top)) * (H - T - B);
