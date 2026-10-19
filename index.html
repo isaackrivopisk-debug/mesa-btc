@@ -190,7 +190,7 @@ body { margin: 0; }
           <span class="state" id="stState"><span class="glyph">○</span><span>Aguardando dados do robô</span></span>
           <span class="eyebrow" id="stRun"></span>
         </div>
-        <div id="posBody"><span style="color:var(--ink-2)">O robô roda a cada hora (no minuto 2) e compra quando o order flow e pelo menos 4 de 5 estratégias concordam.</span></div>
+        <div id="posBody"><span style="color:var(--ink-2)">O robô roda a cada hora (no minuto 2) e compra quando o order flow e pelo menos 4 de 5 estratégias concordam. Cada compra usa 50% do capital, com até 2 operações abertas ao mesmo tempo.</span></div>
       </div>
     </div>
   </div>
@@ -236,7 +236,7 @@ body { margin: 0; }
     <div class="log" id="log"></div>
   </section>
 
-  <p class="foot">Estratégia: rompimento de liquidez com delta forte no gráfico de 1h, 4 de 5 votos (VWAP, EMA 200, horário dos EUA, POC 24h, RSI&nbsp;&gt;&nbsp;50) e liquidez compradora abaixo do preço ≥ 50%. Stop abaixo do candle, alvo na próxima zona de liquidez, máximo de 24h. Taxa simulada de 0,04% por lado. Resultados simulados não garantem resultados reais.</p>
+  <p class="foot">Estratégia: rompimento de liquidez com delta forte no gráfico de 1h, 4 de 5 votos (VWAP, EMA 200, horário dos EUA, POC 24h, RSI&nbsp;&gt;&nbsp;50) e liquidez compradora abaixo do preço ≥ 50%. Stop abaixo do candle, alvo na próxima zona de liquidez, máximo de 24h. Cada operação usa 50% do capital; até 2 abertas ao mesmo tempo. Taxa simulada de 0,04% por lado. Resultados simulados não garantem resultados reais.</p>
 </div>
 
 <script>
@@ -307,9 +307,9 @@ body { margin: 0; }
     const trades = (d.trades || []).map((t) => ({ ...t }));
     const eq = (d.equity || []).map((e) => ({ ts: new Date(e.ts), cap: +e.capital, px: +e.preco_btc, pos: e.em_posicao }));
     const ini = +st.capital_inicial || 10000;
-    const open = trades.find((t) => t.status === "aberta");
+    const abertas = trades.filter((t) => t.status === "aberta").sort((a, b) => new Date(a.aberta_em) - new Date(b.aberta_em));
     const lastPx = d.preco?.close ? +d.preco.close : eq.length ? eq[eq.length - 1].px : null;
-    const mtm = open && lastPx ? open.quantidade_btc * (lastPx - open.preco_entrada) : 0;
+    const mtm = lastPx ? abertas.reduce((s, t) => s + t.quantidade_btc * (lastPx - t.preco_entrada), 0) : 0;
     const cap = (+st.capital || ini) + mtm;
 
     $("capital").textContent = usd.format(cap);
@@ -329,14 +329,14 @@ body { margin: 0; }
       $("tHojeD").textContent = `${pct(dToday.pnlPct)} · ${todayTrades.length} ${todayTrades.length === 1 ? "operação" : "operações"}`;
     } else { $("tHoje").textContent = usd.format(0); $("tHojeD").textContent = "sem dados hoje ainda"; }
     $("tOps").textContent = String(trades.length);
-    $("tOpsD").textContent = `${closed.length} fechadas · ${open ? 1 : 0} aberta`;
+    $("tOpsD").textContent = `${closed.length} fechadas · ${abertas.length} ${abertas.length === 1 ? "aberta" : "abertas"} (máx. 2)`;
     const wins = closed.filter((t) => t.lucro_usd > 0).length;
     $("tWin").textContent = closed.length ? Math.round((wins / closed.length) * 100) + "%" : "—";
     $("tWinD").textContent = closed.length ? `${wins} de ${closed.length} com lucro` : "nenhuma fechada ainda";
     $("tPx").textContent = lastPx ? usd0.format(lastPx) : "—";
     $("tPxD").textContent = d.preco?.ts ? `Bitstamp, hora das ${hm(new Date(new Date(d.preco.ts).getTime() + 3600e3))}` : "Bitstamp";
 
-    renderPosition(st, open, lastPx);
+    renderPosition(st, abertas, lastPx);
     renderDays(days);
     renderBars(days);
     renderTable(trades);
@@ -379,17 +379,13 @@ body { margin: 0; }
     el("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }, svg);
   }
 
-  function renderPosition(st, open, lastPx) {
-    const run = st.ultima_execucao ? `Última execução ${dt(st.ultima_execucao)}` : "Ainda não executou";
-    $("stRun").textContent = run;
-    const body = $("posBody");
-    if (open) {
+  function posCard(open, lastPx, n) {
       const pnl = lastPx ? open.quantidade_btc * (lastPx - open.preco_entrada) - open.taxas_usd : 0;
-      $("stState").innerHTML = `<span class="glyph gain">●</span><span>Comprado (LONG) desde ${dt(open.aberta_em)}</span>`;
       const lo = open.stop, hi = open.alvo, span = hi - lo;
       const at = lastPx ? Math.min(100, Math.max(0, ((lastPx - lo) / span) * 100)) : 50;
       const ent = Math.min(100, Math.max(0, ((open.preco_entrada - lo) / span) * 100));
-      body.innerHTML = `
+      return `<div style="display:grid;gap:8px;padding-top:${n ? "12px" : "0"};${n ? "border-top:1px solid var(--grid)" : ""}">
+        <div class="eyebrow">Operação ${n + 1} · LONG desde ${dt(open.aberta_em)} · ${usd0.format(open.quantidade_btc * open.preco_entrada)} investidos</div>
         <div class="kv">
           <div><span class="k">Entrada</span><span class="v">${usd.format(open.preco_entrada)}</span></div>
           <div><span class="k">Preço agora</span><span class="v">${lastPx ? usd.format(lastPx) : "—"}</span></div>
@@ -401,7 +397,15 @@ body { margin: 0; }
         <div style="display:grid;gap:6px;margin-top:6px">
           <div class="track" role="img" aria-label="Preço entre o stop e o alvo"><span class="entry" style="left:${ent}%"></span><span class="mark" style="left:${at}%"></span></div>
           <div class="track-labels"><span>Stop ${usd0.format(lo)}</span><span>Entrada ${usd0.format(open.preco_entrada)}</span><span>Alvo ${usd0.format(hi)}</span></div>
-        </div>`;
+        </div></div>`;
+  }
+  function renderPosition(st, abertas, lastPx) {
+    const run = st.ultima_execucao ? `Última execução ${dt(st.ultima_execucao)}` : "Ainda não executou";
+    $("stRun").textContent = run;
+    const body = $("posBody");
+    if (abertas.length) {
+      $("stState").innerHTML = `<span class="glyph gain">●</span><span>Comprado (LONG) · ${abertas.length} de 2 operações abertas</span>`;
+      body.innerHTML = `<div style="display:grid;gap:12px">${abertas.map((o, n) => posCard(o, lastPx, n)).join("")}</div>`;
       return;
     }
     const s = st.ultimo_sinal || {};
