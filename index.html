@@ -190,7 +190,7 @@ body { margin: 0; }
           <span class="state" id="stState"><span class="glyph">○</span><span>Aguardando dados do robô</span></span>
           <span class="eyebrow" id="stRun"></span>
         </div>
-        <div id="posBody"><span style="color:var(--ink-2)">O robô roda a cada hora (no minuto 2) e compra quando o order flow e pelo menos 4 de 5 estratégias concordam. Cada compra usa 50% do capital, com até 2 operações abertas ao mesmo tempo.</span></div>
+        <div id="posBody"><span style="color:var(--ink-2)">O robô roda a cada hora (no minuto 2) e compra quando o order flow e pelo menos 4 de 5 estratégias concordam. Uma operação por vez, com 95% do capital.</span></div>
       </div>
     </div>
   </div>
@@ -236,7 +236,7 @@ body { margin: 0; }
     <div class="log" id="log"></div>
   </section>
 
-  <p class="foot">Estratégia: rompimento de liquidez com delta forte no gráfico de 1h, 4 de 5 votos (VWAP, EMA 200, horário dos EUA, POC 24h, RSI&nbsp;&gt;&nbsp;50) e liquidez compradora abaixo do preço ≥ 50%. Stop abaixo do candle, alvo na próxima zona de liquidez, máximo de 24h. Cada operação usa 50% do capital; até 2 abertas ao mesmo tempo. Taxa simulada de 0,04% por lado. Resultados simulados não garantem resultados reais.</p>
+  <p class="foot">Estratégia: rompimento de liquidez com delta forte no gráfico de 1h, 4 de 5 votos (VWAP, EMA 200, horário dos EUA, POC 24h, RSI&nbsp;&gt;&nbsp;50) e liquidez compradora abaixo do preço ≥ 50%. Stop abaixo do candle, alvo na próxima zona de liquidez, máximo de 24h. Uma operação por vez, com 95% do capital. Taxa simulada de 0,04% por lado. Resultados simulados não garantem resultados reais.</p>
 </div>
 
 <script>
@@ -329,7 +329,7 @@ body { margin: 0; }
       $("tHojeD").textContent = `${pct(dToday.pnlPct)} · ${todayTrades.length} ${todayTrades.length === 1 ? "operação" : "operações"}`;
     } else { $("tHoje").textContent = usd.format(0); $("tHojeD").textContent = "sem dados hoje ainda"; }
     $("tOps").textContent = String(trades.length);
-    $("tOpsD").textContent = `${closed.length} fechadas · ${abertas.length} ${abertas.length === 1 ? "aberta" : "abertas"} (máx. 2)`;
+    $("tOpsD").textContent = `${closed.length} fechadas · ${abertas.length} ${abertas.length === 1 ? "aberta" : "abertas"}`;
     const wins = closed.filter((t) => t.lucro_usd > 0).length;
     $("tWin").textContent = closed.length ? Math.round((wins / closed.length) * 100) + "%" : "—";
     $("tWinD").textContent = closed.length ? `${wins} de ${closed.length} com lucro` : "nenhuma fechada ainda";
@@ -404,7 +404,7 @@ body { margin: 0; }
     $("stRun").textContent = run;
     const body = $("posBody");
     if (abertas.length) {
-      $("stState").innerHTML = `<span class="glyph gain">●</span><span>Comprado (LONG) · ${abertas.length} de 2 operações abertas</span>`;
+      $("stState").innerHTML = `<span class="glyph gain">●</span><span>Comprado (LONG)${abertas.length > 1 ? ` · ${abertas.length} operações abertas` : ""}</span>`;
       body.innerHTML = `<div style="display:grid;gap:12px">${abertas.map((o, n) => posCard(o, lastPx, n)).join("")}</div>`;
       return;
     }
