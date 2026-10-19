@@ -115,10 +115,16 @@ section { display: grid; gap: 14px; }
 .days { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .day { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 12px 12px 8px; display: grid; gap: 6px; position: relative; }
 .day .dh { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.day .date { font-weight: 600; }
+.day .date { font-weight: 600; white-space: nowrap; }
 .day .pnl { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
 .day .meta { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
 .day svg { width: 100%; height: 70px; display: block; overflow: visible; }
+.coin-rows { display: grid; gap: 18px; }
+.coin-row { display: grid; gap: 8px; }
+.coin-row .row-h { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 15px; font-weight: 600; }
+.coin-row .row-h small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.days-row { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(220px, 240px); overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.days-row .day { scroll-snap-align: start; }
 
 svg text { fill: var(--muted); font-family: var(--font-data); font-size: 10px; }
 .chart { width: 100%; display: block; overflow: visible; }
@@ -204,9 +210,12 @@ body { margin: 0; }
   <section>
     <div class="sec-head">
       <h2>Lucro de cada dia</h2>
-      <p>Um gráfico por dia, no horário de Brasília. A linha mostra o capital hora a hora; o número é o resultado do dia.</p>
+      <p>Uma fileira por moeda, um cartão por dia (horário de Brasília). O número é o lucro daquela moeda no dia; a linha mostra o resultado hora a hora. O dia mais recente fica à esquerda.</p>
     </div>
-    <div class="days" id="days"></div>
+    <div class="coin-rows">
+      <div class="coin-row"><h3 class="row-h">BTC <small id="sumBtc"></small></h3><div class="days days-row" id="daysBtc"></div></div>
+      <div class="coin-row"><h3 class="row-h">ETH <small id="sumEth"></small></h3><div class="days days-row" id="daysEth"></div></div>
+    </div>
   </section>
 
   <section>
@@ -314,7 +323,7 @@ body { margin: 0; }
     DATA = d;
     const st = d.estado || {};
     const trades = (d.trades || []).map((t) => ({ ...t }));
-    const eq = (d.equity || []).map((e) => ({ ts: new Date(e.ts), cap: +e.capital, px: +e.preco_btc, pos: e.em_posicao }));
+    const eq = (d.equity || []).map((e) => ({ ts: new Date(e.ts), cap: +e.capital, px: +e.preco_btc, pxEth: +e.preco_eth, pos: e.em_posicao }));
     const ini = +st.capital_inicial || 10000;
     const abertas = trades.filter((t) => t.status === "aberta").sort((a, b) => new Date(a.aberta_em) - new Date(b.aberta_em));
     const px = {
@@ -351,7 +360,12 @@ body { margin: 0; }
     $("tPxD").textContent = pts ? `Bitstamp, hora das ${hm(new Date(new Date(pts).getTime() + 3600e3))}` : "Bitstamp";
 
     renderPosition(st, abertas, pxOf);
-    renderDays(days);
+    for (const [par, box, sum] of [["btcusd", "daysBtc", "sumBtc"], ["ethusd", "daysEth", "sumEth"]]) {
+      const cd = coinDays(eq, trades, par, days);
+      const tot = cd.reduce((s, x) => s + x.pnl, 0);
+      $(sum).innerHTML = cd.length ? `total <span class="num ${cls(tot)}">${signed(tot)}</span> · ${(() => { const n = trades.filter((t) => (t.par || "btcusd") === par).length; return n + (n === 1 ? " operação" : " operações"); })()}` : "";
+      renderDays(cd, box, (p) => `resultado ${signed(p.cap)}`);
+    }
     renderBars(days);
     renderTable(trades);
     renderLog(d.log || []);
@@ -376,6 +390,32 @@ body { margin: 0; }
       const realized = trades.filter((t) => t.fechada_em && dayKey(new Date(t.fechada_em)) === k).reduce((s, t) => s + (+t.lucro_usd || 0), 0);
       out.push({ key: k, start, end, pnl: end - start, pnlPct: end / start - 1, pts, n: ts.length, realized });
       prevClose = end;
+    }
+    return out;
+  }
+
+  // lucro de uma moeda hora a hora: realizado das operações fechadas + resultado aberto da operação em andamento
+  function coinDays(eq, trades, par, totalDays) {
+    const tr = trades.filter((t) => (t.par || "btcusd") === par);
+    const pxKey = par === "ethusd" ? "pxEth" : "px";
+    const cumAt = (e) => {
+      let s = 0;
+      for (const t of tr) {
+        const a = new Date(t.aberta_em), f = t.fechada_em ? new Date(t.fechada_em) : null;
+        if (f && f < e.ts) s += +t.lucro_usd || 0;
+        else if (a < e.ts && e[pxKey]) s += t.quantidade_btc * (e[pxKey] - t.preco_entrada) - (f ? (+t.taxas_usd || 0) / 2 : +t.taxas_usd || 0);
+      }
+      return s;
+    };
+    const startCap = new Map(totalDays.map((d) => [d.key, d.start]));
+    const map = new Map();
+    for (const e of eq) { const k = dayKey(e.ts); if (!map.has(k)) map.set(k, []); map.get(k).push({ ts: e.ts, cap: cumAt(e) }); }
+    const out = []; let prev = 0;
+    for (const k of [...map.keys()].sort()) {
+      const pts = map.get(k), end = pts[pts.length - 1].cap, pnl = end - prev;
+      const n = tr.filter((t) => dayKey(new Date(t.aberta_em)) === k).length;
+      out.push({ key: k, start: prev, end, pnl, pnlPct: pnl / (startCap.get(k) || 10000), pts, n });
+      prev = end;
     }
     return out;
   }
@@ -451,10 +491,10 @@ body { margin: 0; }
     }
   }
 
-  function renderDays(days) {
-    const box = $("days"); box.textContent = "";
+  function renderDays(days, boxId, tipFmt) {
+    const box = $(boxId); box.textContent = "";
     if (!days.length) {
-      box.innerHTML = `<div class="empty" style="grid-column:1/-1">O primeiro dia aparece aqui depois da primeira hora completa do robô. Cada cartão vai mostrar o capital hora a hora e o resultado do dia.</div>`;
+      box.innerHTML = `<div class="empty" style="grid-column:1/-1">O primeiro dia aparece aqui depois da primeira hora completa do robô.</div>`;
       return;
     }
     const recent = days.slice(-21).reverse();
@@ -462,7 +502,7 @@ body { margin: 0; }
       const card = document.createElement("div"); card.className = "day";
       card.innerHTML = `<div class="dh"><span class="date">${dayLabel(d.key)}</span><span class="pnl ${cls(d.pnl)}">${signed(d.pnl)}</span></div>
         <div class="meta"><span class="num ${cls(d.pnl)}">${pct(d.pnlPct)}</span><span>${d.n} ${d.n === 1 ? "operação" : "operações"}</span></div>`;
-      const svg = el("svg", { viewBox: "0 0 220 70", preserveAspectRatio: "none", role: "img", "aria-label": `Capital em ${dayLabel(d.key)}` });
+      const svg = el("svg", { viewBox: "0 0 220 70", preserveAspectRatio: "none", role: "img", "aria-label": `Resultado em ${dayLabel(d.key)}` });
       const pts = [{ ts: null, cap: d.start }, ...d.pts];
       const vals = pts.map((p) => p.cap);
       const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.15 || Math.max(1, d.start * 0.0005);
@@ -485,7 +525,7 @@ body { margin: 0; }
         tip.hidden = false;
         tip.style.left = ((x(pts.indexOf(p)) / 220) * r.width + (r.left - card.getBoundingClientRect().left)) + "px";
         tip.style.top = (y(p.cap) / 70 * r.height + (r.top - card.getBoundingClientRect().top)) + "px";
-        tip.innerHTML = `<b>${hm(p.ts)}</b> · ${usd.format(p.cap)}`;
+        tip.innerHTML = `<b>${hm(p.ts)}</b> · ${tipFmt ? tipFmt(p) : usd.format(p.cap)}`;
       });
       svg.addEventListener("pointerleave", () => (tip.hidden = true));
       box.appendChild(card);
